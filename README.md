@@ -29,16 +29,15 @@ Then go to **Browse → Extensions**, pull down to refresh and install your exte
 
 ## Adding your website
 
-The template lives in `src/en/mysite/`. For each website:
+The template lives in `template/mysite/` (it is not built). For each website:
 
-1. Copy `src/en/mysite` to `src/<lang>/<yoursite>` (lowercase, no spaces, e.g. `src/en/animepahe`).
+1. Copy `template/mysite` to `src/<lang>/<yoursite>` (lowercase, no spaces, e.g. `src/en/animepahe`).
 2. Rename the package folders and `package` line to match:
    `src/<lang>/<yoursite>/src/eu/kanade/tachiyomi/animeextension/<lang>/<yoursite>/`
 3. Edit `build.gradle`: set `extName` and `extClass` (the class name with a leading dot).
 4. In the Kotlin file, set `name`, `baseUrl` and `lang`, then fill in every `// TODO`:
    the URLs for popular/latest/search, and the CSS selectors for anime cards, episode lists and video links.
 5. **Bump `extVersionCode`** every time you change an extension, otherwise Aniyomi won't see the update.
-6. Delete the `src/en/mysite` template once your own extension works.
 
 Optional: put a launcher icon in `src/<lang>/<yoursite>/res/mipmap-*/ic_launcher.png`; otherwise the default Aniyomi icon is used.
 
