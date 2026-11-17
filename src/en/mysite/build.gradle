@@ -1,0 +1,8 @@
+ext {
+    extName = 'My Site'        // Name shown in Aniyomi
+    extClass = '.MySite'       // Main class (relative to the package)
+    extVersionCode = 1         // Bump this every time you change the code
+    isNsfw = false
+}
+
+apply from: "$rootDir/common.gradle"

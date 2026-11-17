@@ -1,0 +1,100 @@
+name: Build & publish repo
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build extensions and publish to the `repo` branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check signing secrets
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          ALIAS: ${{ secrets.ALIAS }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          for v in SIGNING_KEY ALIAS KEY_STORE_PASSWORD KEY_PASSWORD; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Missing repository secret $v. See README.md > 'Set up the signing key'."
+              exit 1
+            fi
+          done
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Prepare signing key
+        run: echo "${{ secrets.SIGNING_KEY }}" | base64 -d > signingkey.jks
+
+      - name: Build extensions
+        env:
+          ALIAS: ${{ secrets.ALIAS }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew -p src assembleRelease
+
+      - name: Clean up signing key
+        if: always()
+        run: rm -f signingkey.jks
+
+      - name: Collect APKs
+        run: |
+          mkdir -p repo/apk
+          find src -path '*/build/outputs/apk/release/*.apk' | while read -r apk; do
+            name="$(basename "$apk")"
+            cp "$apk" "repo/apk/${name%-release.apk}.apk"
+          done
+          ls -l repo/apk
+          [ -n "$(ls repo/apk)" ] || { echo "::error::No APKs were built"; exit 1; }
+
+      - name: Inspect extensions (source names, ids, languages)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v1.4.4 -R aniyomiorg/aniyomi-extensions-inspector -p '*.jar' -O Inspector.jar
+          java -jar Inspector.jar "repo/apk" "output.json" "tmp"
+
+      - name: Create index files
+        env:
+          REPO_NAME: ${{ github.event.repository.name }}
+          REPO_WEBSITE: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          APK="$(ls repo/apk/*.apk | head -1)"
+          export SIGNING_KEY_FINGERPRINT="$("$TOOLS/apksigner" verify --print-certs "$APK" | grep -m1 'SHA-256 digest' | awk '{print $NF}')"
+          echo "Signing key fingerprint: $SIGNING_KEY_FINGERPRINT"
+          python3 .github/scripts/create-repo.py
+
+      - name: Push to `repo` branch
+        run: |
+          cd repo
+          git init -q -b repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -q -m "Update extensions repo (${GITHUB_SHA::7})"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" repo
