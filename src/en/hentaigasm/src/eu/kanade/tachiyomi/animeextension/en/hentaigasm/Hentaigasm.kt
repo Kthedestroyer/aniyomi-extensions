@@ -26,7 +26,7 @@ class Hentaigasm : AnimeHttpSource() {
 
     override val lang = "en"
 
-    override val supportsLatest = false
+    override val supportsLatest = true
 
     override fun headersBuilder(): Headers.Builder = super.headersBuilder()
         .add("Referer", "$baseUrl/")
@@ -38,9 +38,10 @@ class Hentaigasm : AnimeHttpSource() {
 
     override fun popularAnimeParse(response: Response): AnimesPage = parseList(response.asJsoup())
 
-    override fun latestUpdatesRequest(page: Int): Request = throw UnsupportedOperationException()
+    // The homepage lists the newest uploads first
+    override fun latestUpdatesRequest(page: Int): Request = GET(pageUrl(page), headers)
 
-    override fun latestUpdatesParse(response: Response): AnimesPage = throw UnsupportedOperationException()
+    override fun latestUpdatesParse(response: Response): AnimesPage = parseList(response.asJsoup())
 
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
         val url = pageUrl(page).toHttpUrl().newBuilder()
