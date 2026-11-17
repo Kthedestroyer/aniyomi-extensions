@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.animeextension.en.hentaigasm
 
+import eu.kanade.tachiyomi.animesource.model.AnimeFilter
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
@@ -46,9 +47,39 @@ class Hentaigasm : AnimeHttpSource() {
     override fun searchAnimeRequest(page: Int, query: String, filters: AnimeFilterList): Request {
         val url = pageUrl(page).toHttpUrl().newBuilder()
             .addQueryParameter("s", query)
-            .build()
-        return GET(url, headers)
+
+        val sort = filters.filterIsInstance<SortFilter>().firstOrNull()?.state ?: 0
+        if (sort == 1) {
+            url.addQueryParameter("orderby", "date")
+            url.addQueryParameter("order", "ASC")
+        }
+
+        // WordPress "m" parameter: YYYY or YYYYMM
+        val year = filters.filterIsInstance<YearFilter>().firstOrNull()?.selected()
+        val month = filters.filterIsInstance<MonthFilter>().firstOrNull()?.state ?: 0
+        if (year != null) {
+            val m = if (month > 0) year + month.toString().padStart(2, '0') else year
+            url.addQueryParameter("m", m)
+        }
+
+        return GET(url.build(), headers)
     }
+
+    // =============================== Filters ==============================
+    override fun getFilterList() = AnimeFilterList(
+        AnimeFilter.Header("Filters work with or without a search term"),
+        SortFilter(),
+        YearFilter(),
+        MonthFilter(),
+    )
+
+    private class SortFilter : AnimeFilter.Select<String>("Sort by upload date", arrayOf("Newest first", "Oldest first"))
+
+    private class YearFilter : AnimeFilter.Select<String>("Year uploaded", YEARS) {
+        fun selected(): String? = values[state].takeIf { state > 0 }
+    }
+
+    private class MonthFilter : AnimeFilter.Select<String>("Month uploaded (pick a year too)", MONTHS)
 
     override fun searchAnimeParse(response: Response): AnimesPage = parseList(response.asJsoup())
 
@@ -145,6 +176,13 @@ class Hentaigasm : AnimeHttpSource() {
             ?.joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
 
     companion object {
+        private val YEARS = arrayOf("Any") +
+            (java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) downTo 2010).map { it.toString() }
+        private val MONTHS = arrayOf(
+            "Any", "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December",
+        )
+
         // Direct video links, e.g. https://hgasm2.com/Some%20Title%201%20Subbed.mp4
         private val VIDEO_URL_REGEX = Regex("""https?:\\?/\\?/[^"'\s<>]+?\.(?:mp4|m3u8)(?:\?[^"'\s<>]*)?""")
         private val QUOTED_VIDEO_URL_REGEX = Regex("""["'](https?:\\?/\\?/[^"'<>]+?\.(?:mp4|m3u8)(?:\?[^"'<>]*)?)["']""")
