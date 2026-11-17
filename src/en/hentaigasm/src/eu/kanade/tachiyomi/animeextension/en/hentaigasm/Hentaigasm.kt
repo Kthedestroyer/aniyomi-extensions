@@ -56,9 +56,8 @@ class Hentaigasm : AnimeHttpSource() {
             SAnime.create().apply {
                 setUrlWithoutDomain(link.attr("href"))
                 title = link.attr("title").ifEmpty { link.text() }
-                thumbnail_url = link.selectFirst("img")?.let { img ->
-                    img.attr("data-src").ifEmpty { img.attr("src") }.fixUrl()
-                }
+                // Small static image instead of the heavy animated .webp preview
+                thumbnail_url = thumbnailUrl(title)
             }
         }.distinctBy { it.url }
 
@@ -72,17 +71,15 @@ class Hentaigasm : AnimeHttpSource() {
     // =========================== Anime Details ============================
     override fun animeDetailsParse(response: Response): SAnime {
         val document = response.asJsoup()
-        val pageTitle = document.selectFirst("meta[property=og:title]")?.attr("content")
-            ?: document.selectFirst("h1")?.text()
-            ?: document.title()
-        val cleanTitle = pageTitle.substringBefore(" - Hentaigasm").substringBefore(" | ").trim()
 
         return SAnime.create().apply {
-            title = cleanTitle
-            thumbnail_url = document.selectFirst("meta[property=og:image]")?.attr("content")?.fixUrl()
-                ?: "$baseUrl/thumbnail/$cleanTitle.jpg".fixUrl()
+            // Blank title / null thumbnail = keep the ones from the list.
+            // The episode page only has the site's generic title and image.
+            title = ""
+            thumbnail_url = null
             description = document.selectFirst("meta[property=og:description], meta[name=description]")
                 ?.attr("content")
+                ?.takeUnless { it.contains("hentaigasm", ignoreCase = true) }
             genre = document.select("a[rel=tag], a[rel='category tag']")
                 .map { it.text() }
                 .distinct()
@@ -95,8 +92,7 @@ class Hentaigasm : AnimeHttpSource() {
 
     // ============================== Episodes ==============================
     override fun episodeListParse(response: Response): List<SEpisode> {
-        val document = response.asJsoup()
-        val title = document.selectFirst("h1")?.text() ?: "Episode"
+        val title = titleFromSlug(response.request.url.pathSegments) ?: "Episode"
         return listOf(
             SEpisode.create().apply {
                 setUrlWithoutDomain(response.request.url.toString())
@@ -119,8 +115,7 @@ class Hentaigasm : AnimeHttpSource() {
             .toList()
             .ifEmpty {
                 // Fallback: the site stores videos as <title>.mp4 on hgasm2.com
-                val title = response.request.url.pathSegments.firstOrNull { it.isNotBlank() }
-                    ?.let { slug -> slug.split("-").joinToString(" ") { it.replaceFirstChar(Char::uppercase) } }
+                val title = titleFromSlug(response.request.url.pathSegments)
                 listOfNotNull(title?.let { "https://hgasm2.com/$it.mp4".fixUrl() })
             }
 
@@ -135,6 +130,18 @@ class Hentaigasm : AnimeHttpSource() {
 
     // ============================== Helpers ===============================
     private fun String.fixUrl(): String = trim().replace(" ", "%20")
+
+    private fun thumbnailUrl(title: String): String = baseUrl.toHttpUrl().newBuilder()
+        .addPathSegment("thumbnail")
+        .addPathSegment("$title.jpg")
+        .build()
+        .toString()
+
+    // "hitori-tsuma-1-subbed" -> "Hitori Tsuma 1 Subbed"
+    private fun titleFromSlug(segments: List<String>): String? =
+        segments.firstOrNull { it.isNotBlank() }
+            ?.split("-")
+            ?.joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
 
     companion object {
         // Direct video links, e.g. https://hgasm2.com/Some%20Title%201%20Subbed.mp4
